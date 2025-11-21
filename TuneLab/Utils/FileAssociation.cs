@@ -28,7 +28,10 @@ internal static class FileAssociation
             }
 
             var appIconPath = Path.Combine(PathManager.ExcutableFolder, "Assets", "app.ico");
-            var fileIconPath = Path.Combine(PathManager.ExcutableFolder, "Assets", "file.ico");
+            // For Windows, file.ico is in the root directory; for other platforms it's in Assets folder
+            var fileIconPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? Path.Combine(PathManager.ExcutableFolder, "file.ico")
+                : Path.Combine(PathManager.ExcutableFolder, "Assets", "file.ico");
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
