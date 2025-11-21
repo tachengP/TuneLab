@@ -170,6 +170,7 @@ internal partial class PianoScrollView
                                         var note = noteItem.Note;
                                         if (!note.IsSelected)
                                         {
+                                            CommitPendingSyncModeChanges();
                                             Part.Notes.DeselectAllItems();
                                             note.Select();
                                         }
@@ -1186,6 +1187,9 @@ internal partial class PianoScrollView
             if (PianoScrollView.Part == null)
                 return;
 
+            // Commit any pending sync mode changes before starting selection
+            PianoScrollView.CommitPendingSyncModeChanges();
+
             State = SelectState;
             PianoScrollView.mSelection.IsAcitve = false;
             mDownTick = PianoScrollView.TickAxis.X2Tick(point.X) - PianoScrollView.Part.Pos.Value;
@@ -1509,12 +1513,27 @@ internal partial class PianoScrollView
 
     readonly PitchLockOperation mPitchLockOperation;
 
+    // Track if we have uncommitted pitch/para sync changes that should be committed on deselection
+    bool mHasPendingSyncModeChanges = false;
+    
+    void CommitPendingSyncModeChanges()
+    {
+        if (mHasPendingSyncModeChanges && Part != null)
+        {
+            Part.Commit();
+            mHasPendingSyncModeChanges = false;
+        }
+    }
+
     class NoteMoveOperation(PianoScrollView pianoScrollView) : Operation(pianoScrollView)
     {
         public void Down(Avalonia.Point point, bool ctrl, INote note)
         {
             if (PianoScrollView.Part == null)
                 return;
+
+            // Commit any pending sync mode changes before starting a new move
+            PianoScrollView.CommitPendingSyncModeChanges();
 
             mCtrl = ctrl;
             mIsSelected = note.IsSelected;
@@ -1730,8 +1749,17 @@ internal partial class PianoScrollView
             PianoScrollView.Part.EnableAutoPrepare();
             if (mMoved)
             {
-                // Commit the final state - the overlay becomes permanent
-                PianoScrollView.Part.Commit();
+                // Don't commit immediately - wait for deselection to make overlay permanent
+                // Only set flag if sync modes are enabled
+                if (Settings.PitchSyncMode || Settings.ParaSyncMode)
+                {
+                    PianoScrollView.mHasPendingSyncModeChanges = true;
+                }
+                else
+                {
+                    // If sync modes are not enabled, commit normally
+                    PianoScrollView.Part.Commit();
+                }
             }
             else
             {
