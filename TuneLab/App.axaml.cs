@@ -67,6 +67,14 @@ public partial class App : Application
                 mMainWindow = new MainWindow();
                 desktop.MainWindow = mMainWindow;
 
+                // Register file association on first startup
+                if (!Settings.FileAssociationRegistered.Value)
+                {
+                    FileAssociation.RegisterFileAssociation();
+                    Settings.FileAssociationRegistered.Value = true;
+                    Settings.Save(PathManager.SettingsFilePath);
+                }
+
                 // 检测启动参数
                 var args = Environment.GetCommandLineArgs();
                 Log.Info($"Command line args:");

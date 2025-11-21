@@ -10,7 +10,7 @@
 		<LangVersion>latest</LangVersion>
 		<Version>1.5.10</Version>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<ApplicationIcon>Assets\TuneLab.ico</ApplicationIcon>
+		<ApplicationIcon>Assets\app.ico</ApplicationIcon>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -18,7 +18,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Content Include="Assets\TuneLab.ico" />
+	  <Content Include="Assets\app.ico" />
 	</ItemGroup>
 
 	<ItemGroup>
