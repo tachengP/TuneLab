@@ -27,6 +27,8 @@ You can develop your own project formats and synthesis engine extensions.
 
     Compress the extension package into a zip and change the suffix to `.tlx`.
 
+## Icon Association
+
 # Translation contributor
 | Lang | contributor |
 |------|:-----------:|
