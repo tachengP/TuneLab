@@ -170,6 +170,7 @@ internal partial class PianoScrollView
                                         var note = noteItem.Note;
                                         if (!note.IsSelected)
                                         {
+                                            CommitPendingSyncModeChanges();
                                             Part.Notes.DeselectAllItems();
                                             note.Select();
                                         }
@@ -1186,6 +1187,9 @@ internal partial class PianoScrollView
             if (PianoScrollView.Part == null)
                 return;
 
+            // Commit any pending sync mode changes before starting selection
+            PianoScrollView.CommitPendingSyncModeChanges();
+
             State = SelectState;
             PianoScrollView.mSelection.IsAcitve = false;
             mDownTick = PianoScrollView.TickAxis.X2Tick(point.X) - PianoScrollView.Part.Pos.Value;
@@ -1509,12 +1513,27 @@ internal partial class PianoScrollView
 
     readonly PitchLockOperation mPitchLockOperation;
 
+    // Track if we have uncommitted pitch/para sync changes that should be committed on deselection
+    bool mHasPendingSyncModeChanges = false;
+    
+    void CommitPendingSyncModeChanges()
+    {
+        if (mHasPendingSyncModeChanges && Part != null)
+        {
+            Part.Commit();
+            mHasPendingSyncModeChanges = false;
+        }
+    }
+
     class NoteMoveOperation(PianoScrollView pianoScrollView) : Operation(pianoScrollView)
     {
         public void Down(Avalonia.Point point, bool ctrl, INote note)
         {
             if (PianoScrollView.Part == null)
                 return;
+
+            // Commit any pending sync mode changes before starting a new move
+            PianoScrollView.CommitPendingSyncModeChanges();
 
             mCtrl = ctrl;
             mIsSelected = note.IsSelected;
@@ -1547,6 +1566,39 @@ internal partial class PianoScrollView
             mPitch = note.Pitch.Value;
             mMinPitch = minPitch;
             mMaxPitch = maxPitch;
+
+            // Capture original pitch and automation data once at the start (for the overlay)
+            // Capture the entire range from first to last selected note (including gaps)
+            var part = PianoScrollView.Part;
+            if ((Settings.PitchSyncMode || Settings.ParaSyncMode) && !mMoveNotes.IsEmpty())
+            {
+                double start = mMoveNotes.Min(n => n.StartPos());
+                double end = mMoveNotes.Max(n => n.EndPos());
+                mOriginalRangeStart = start;
+                mOriginalRangeEnd = end;
+                
+                if (Settings.PitchSyncMode)
+                {
+                    mOriginalPitchData = part.Pitch.RangeInfo(start, end);
+                    // Clear original position so it's part of mHead state
+                    part.Pitch.Clear(start, end);
+                }
+                if (Settings.ParaSyncMode)
+                {
+                    foreach (var kvp in part.Automations)
+                    {
+                        var automationID = kvp.Key;
+                        var automation = kvp.Value;
+                        var rangeInfo = automation.RangeInfo(start, end);
+                        mOriginalAutomationData[automationID] = rangeInfo;
+                    }
+                    // Clear original position so it's part of mHead state
+                    foreach (var kvp in part.Automations)
+                    {
+                        kvp.Value.Clear(start, end, Settings.ParameterBoundaryExtension);
+                    }
+                }
+            }
         }
 
         public void Move(Avalonia.Point point, bool alt, bool shift)
@@ -1573,54 +1625,81 @@ internal partial class PianoScrollView
             mLastPosOffset = posOffset;
             mLastPitchOffset = pitchOffset;
             mMoved = true;
+            
+            // Revert to the state at Down() - this ensures we don't leave traces
             part.DiscardTo(mHead);
             part.BeginMergeReSegment();
             part.Notes.ListModified.BeginMerge();
-            List<List<List<Point>>> pitchInfos = new();
-            if (Settings.PitchSyncMode)
+            
+            // Transform the originally captured pitch and automation data to new positions
+            // The data covers the entire range (including gaps), so we transform the whole range
+            if (Settings.PitchSyncMode && mOriginalPitchData != null)
             {
-                foreach (var note in mMoveNotes)
+                var transformedPitchData = new List<List<Point>>();
+                foreach (var line in mOriginalPitchData)
                 {
-                    var pitchInfo = part.Pitch.RangeInfo(note.StartPos(), note.EndPos());
-                    foreach (var line in pitchInfo)
+                    var transformedLine = new List<Point>();
+                    for (int i = 0; i < line.Count; i++)
                     {
-                        for (int i = 0; i < line.Count; i++)
-                        {
-                            line[i] = new(line[i].X + note.StartPos() + posOffset, line[i].Y + pitchOffset);
-                        }
+                        // Transform: original relative position + original range start + position offset + pitch offset
+                        transformedLine.Add(new(line[i].X + mOriginalRangeStart + posOffset, line[i].Y + pitchOffset));
                     }
-                    pitchInfos.Add(pitchInfo);
+                    transformedPitchData.Add(transformedLine);
+                }
+                mTransformedPitchData = transformedPitchData;
+            }
+            
+            if (Settings.ParaSyncMode && !mOriginalAutomationData.IsEmpty())
+            {
+                mTransformedAutomationData.Clear();
+                foreach (var kvp in mOriginalAutomationData)
+                {
+                    var automationID = kvp.Key;
+                    var originalData = kvp.Value;
+                    var transformedData = new List<Point>();
+                    for (int i = 0; i < originalData.Count; i++)
+                    {
+                        // Transform: original relative position + original range start + position offset
+                        transformedData.Add(new(originalData[i].X + mOriginalRangeStart + posOffset, originalData[i].Y));
+                    }
+                    mTransformedAutomationData[automationID] = transformedData;
                 }
             }
 
+            // Move notes to new position
             foreach (var note in mMoveNotes)
             {
                 note.Pos.Set(note.Pos.Value + posOffset);
                 note.Pitch.Set(note.Pitch.Value + pitchOffset);
                 part.RemoveNote(note);
             }
-            if (Settings.PitchSyncMode)
-            {
-                foreach (var note in mMoveNotes)
-                {
-                    part.Pitch.Clear(note.StartPos(), note.EndPos());
-                }
-            }
-
+            
+            // Insert notes at new position
             foreach (var note in mMoveNotes)
             {
                 part.InsertNote(note);
             }
-            if (Settings.PitchSyncMode)
+            
+            // Add the transformed pitch/automation data at new position (as overlay)
+            if (Settings.PitchSyncMode && mTransformedPitchData != null)
             {
-                foreach (var info in pitchInfos)
+                foreach (var line in mTransformedPitchData)
                 {
-                    foreach (var line in info)
+                    part.Pitch.AddLine(line, Settings.ParameterBoundaryExtension);
+                }
+            }
+            if (Settings.ParaSyncMode && !mTransformedAutomationData.IsEmpty())
+            {
+                foreach (var kvp in mTransformedAutomationData)
+                {
+                    var automationID = kvp.Key;
+                    if (part.Automations.TryGetValue(automationID, out var automation))
                     {
-                        part.Pitch.AddLine(line, Settings.ParameterBoundaryExtension);
+                        automation.AddLine(kvp.Value, Settings.ParameterBoundaryExtension);
                     }
                 }
             }
+            
             part.Notes.ListModified.EndMerge();
             part.EndMergeReSegment();
         }
@@ -1638,7 +1717,17 @@ internal partial class PianoScrollView
             PianoScrollView.Part.EnableAutoPrepare();
             if (mMoved)
             {
-                PianoScrollView.Part.Commit();
+                // Don't commit immediately - wait for deselection to make overlay permanent
+                // Only set flag if sync modes are enabled
+                if (Settings.PitchSyncMode || Settings.ParaSyncMode)
+                {
+                    PianoScrollView.mHasPendingSyncModeChanges = true;
+                }
+                else
+                {
+                    // If sync modes are not enabled, commit normally
+                    PianoScrollView.Part.Commit();
+                }
             }
             else
             {
@@ -1659,12 +1748,26 @@ internal partial class PianoScrollView
             mMoved = false;
             mNote = null;
             mMoveNotes.Clear();
+            mOriginalPitchData = null;
+            mOriginalAutomationData.Clear();
+            mTransformedPitchData = null;
+            mTransformedAutomationData.Clear();
+            mOriginalRangeStart = 0;
+            mOriginalRangeEnd = 0;
             mLastPosOffset = 0;
             mLastPitchOffset = 0;
         }
 
         INote? mNote;
         List<INote> mMoveNotes = new();
+        
+        // Store entire range data (including gaps between notes)
+        List<List<Point>>? mOriginalPitchData = null;
+        Dictionary<string, List<Point>> mOriginalAutomationData = new();
+        List<List<Point>>? mTransformedPitchData = null;
+        Dictionary<string, List<Point>> mTransformedAutomationData = new();
+        double mOriginalRangeStart = 0;
+        double mOriginalRangeEnd = 0;
 
         bool mCtrl;
         bool mIsSelected;
