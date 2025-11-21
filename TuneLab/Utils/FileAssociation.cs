@@ -195,13 +195,33 @@ Terminal=false
         try
         {
             // On macOS, file associations are typically handled by Info.plist in the app bundle
-            // Since this is a runtime registration attempt, we'll use the Launch Services API
-            // However, .NET doesn't have direct bindings for this, so we'll use a workaround
+            // We'll try multiple approaches to register the file association
             
-            // Try to register using duti if available
+            // First, try to create/update Info.plist in the app bundle if we're in one
+            var appBundlePath = FindMacOSAppBundle(executablePath);
+            if (!string.IsNullOrEmpty(appBundlePath))
+            {
+                var infoPlistPath = Path.Combine(appBundlePath, "Contents", "Info.plist");
+                CreateOrUpdateMacOSInfoPlist(infoPlistPath, executablePath);
+                
+                // Try to refresh Launch Services
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+                        Arguments = $"-f \"{appBundlePath}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    Process.Start(psi)?.WaitForExit(5000);
+                }
+                catch { /* lsregister might not be accessible */ }
+            }
+            
+            // Also try to register using duti if available
             try
             {
-                // First check if duti is installed
                 var checkDuti = new ProcessStartInfo
                 {
                     FileName = "which",
@@ -215,28 +235,170 @@ Terminal=false
 
                 if (dutiCheck?.ExitCode == 0)
                 {
-                    // Use duti to set file association
-                    var bundleId = GetMacOSBundleIdentifier();
-                    if (!string.IsNullOrEmpty(bundleId))
+                    var bundleId = GetMacOSBundleIdentifier() ?? "com.tunelab.TuneLab";
+                    var psi = new ProcessStartInfo
                     {
-                        var psi = new ProcessStartInfo
-                        {
-                            FileName = "duti",
-                            Arguments = $"-s {bundleId} {FileExtension} all",
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        };
-                        Process.Start(psi)?.WaitForExit(5000);
-                    }
+                        FileName = "duti",
+                        Arguments = $"-s {bundleId} {FileExtension} all",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    Process.Start(psi)?.WaitForExit(5000);
                 }
             }
             catch { /* duti not available, skip */ }
 
-            Log.Info("macOS file association: Info.plist configuration should be used for proper app bundle association");
+            Log.Info("macOS file association registered");
         }
         catch (Exception ex)
         {
             Log.Error($"Failed to register macOS file association: {ex}");
+        }
+    }
+
+    private static string? FindMacOSAppBundle(string executablePath)
+    {
+        var dir = Path.GetDirectoryName(executablePath);
+        while (dir != null)
+        {
+            if (dir.EndsWith(".app"))
+                return dir;
+            var parentDir = Path.GetDirectoryName(dir);
+            if (parentDir == dir) // Reached root
+                break;
+            dir = parentDir;
+        }
+        return null;
+    }
+
+    private static void CreateOrUpdateMacOSInfoPlist(string infoPlistPath, string executablePath)
+    {
+        try
+        {
+            var contentsDir = Path.GetDirectoryName(infoPlistPath);
+            var resourcesDir = Path.Combine(contentsDir!, "Resources");
+            PathManager.MakeSureExist(contentsDir!);
+            PathManager.MakeSureExist(resourcesDir);
+
+            // Copy icons to Resources folder
+            var fileIconPng = Path.Combine(PathManager.ExcutableFolder, "Assets", "file.png");
+            var appIconPng = Path.Combine(PathManager.ExcutableFolder, "Assets", "app.png");
+            
+            if (File.Exists(fileIconPng))
+            {
+                var targetIconPath = Path.Combine(resourcesDir, "file.icns");
+                // For simplicity, copy PNG (in production, should convert to .icns)
+                try
+                {
+                    // Try to convert PNG to ICNS using sips (macOS built-in tool)
+                    var tempIconSet = Path.Combine(Path.GetTempPath(), "file.iconset");
+                    PathManager.MakeSureExist(tempIconSet);
+                    
+                    // Copy file.png to multiple sizes in iconset
+                    var iconSizes = new[] { 16, 32, 128, 256, 512 };
+                    foreach (var size in iconSizes)
+                    {
+                        var iconFile = Path.Combine(tempIconSet, $"icon_{size}x{size}.png");
+                        var iconFile2x = Path.Combine(tempIconSet, $"icon_{size}x{size}@2x.png");
+                        
+                        // Use sips to resize
+                        try
+                        {
+                            var sips = new ProcessStartInfo
+                            {
+                                FileName = "sips",
+                                Arguments = $"-z {size} {size} \"{fileIconPng}\" --out \"{iconFile}\"",
+                                UseShellExecute = false,
+                                CreateNoWindow = true,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true
+                            };
+                            Process.Start(sips)?.WaitForExit(2000);
+                            
+                            var sips2x = new ProcessStartInfo
+                            {
+                                FileName = "sips",
+                                Arguments = $"-z {size * 2} {size * 2} \"{fileIconPng}\" --out \"{iconFile2x}\"",
+                                UseShellExecute = false,
+                                CreateNoWindow = true,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true
+                            };
+                            Process.Start(sips2x)?.WaitForExit(2000);
+                        }
+                        catch { }
+                    }
+                    
+                    // Convert iconset to icns
+                    var iconutil = new ProcessStartInfo
+                    {
+                        FileName = "iconutil",
+                        Arguments = $"-c icns \"{tempIconSet}\" -o \"{targetIconPath}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    Process.Start(iconutil)?.WaitForExit(5000);
+                    
+                    // Clean up temp iconset
+                    try { Directory.Delete(tempIconSet, true); } catch { }
+                }
+                catch
+                {
+                    // Fallback: just copy the PNG file
+                    File.Copy(fileIconPng, Path.Combine(resourcesDir, "file.png"), true);
+                }
+            }
+
+            // Create or update Info.plist
+            var bundleId = GetMacOSBundleIdentifier() ?? "com.tunelab.TuneLab";
+            var executableName = Path.GetFileNameWithoutExtension(executablePath);
+            
+            var plistContent = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<!DOCTYPE plist PUBLIC ""-//Apple//DTD PLIST 1.0//EN"" ""http://www.apple.com/DTDs/PropertyList-1.0.dtd"">
+<plist version=""1.0"">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>{bundleId}</string>
+    <key>CFBundleName</key>
+    <string>TuneLab</string>
+    <key>CFBundleDisplayName</key>
+    <string>TuneLab</string>
+    <key>CFBundleExecutable</key>
+    <string>{executableName}</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>app</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>tlp</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>file</string>
+            <key>CFBundleTypeName</key>
+            <string>{FileDescriptionEn}</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+        </dict>
+    </array>
+</dict>
+</plist>";
+
+            File.WriteAllText(infoPlistPath, plistContent);
+            Log.Info($"Created/Updated Info.plist at {infoPlistPath}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Failed to create/update Info.plist: {ex}");
         }
     }
 
