@@ -1580,6 +1580,8 @@ internal partial class PianoScrollView
                 if (Settings.PitchSyncMode)
                 {
                     mOriginalPitchData = part.Pitch.RangeInfo(start, end);
+                    // Clear original position so it's part of mHead state
+                    part.Pitch.Clear(start, end);
                 }
                 if (Settings.ParaSyncMode)
                 {
@@ -1589,6 +1591,11 @@ internal partial class PianoScrollView
                         var automation = kvp.Value;
                         var rangeInfo = automation.RangeInfo(start, end);
                         mOriginalAutomationData[automationID] = rangeInfo;
+                    }
+                    // Clear original position so it's part of mHead state
+                    foreach (var kvp in part.Automations)
+                    {
+                        kvp.Value.Clear(start, end, Settings.ParameterBoundaryExtension);
                     }
                 }
             }
@@ -1667,26 +1674,13 @@ internal partial class PianoScrollView
                 part.RemoveNote(note);
             }
             
-            // Clear original range (including gaps)
-            if (Settings.PitchSyncMode)
-            {
-                part.Pitch.Clear(mOriginalRangeStart, mOriginalRangeEnd);
-            }
-            if (Settings.ParaSyncMode)
-            {
-                foreach (var kvp in part.Automations)
-                {
-                    kvp.Value.Clear(mOriginalRangeStart, mOriginalRangeEnd, Settings.ParameterBoundaryExtension);
-                }
-            }
-
             // Insert notes at new position
             foreach (var note in mMoveNotes)
             {
                 part.InsertNote(note);
             }
             
-            // Add the transformed pitch/automation data at new position
+            // Add the transformed pitch/automation data at new position (as overlay)
             if (Settings.PitchSyncMode && mTransformedPitchData != null)
             {
                 foreach (var line in mTransformedPitchData)
