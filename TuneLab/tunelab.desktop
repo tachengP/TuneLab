@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=TuneLab
+Name[zh_CN]=TuneLab
+Comment=TuneLab Project Editor
+Comment[zh_CN]=TuneLab 工程文件编辑器
+Exec=TuneLab %F
+Icon=tunelab
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;AudioVideoEditing;
+MimeType=application/x-tunelab-project;
+StartupNotify=true
+StartupWMClass=TuneLab

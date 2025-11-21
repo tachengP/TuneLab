@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>TuneLab</string>
+    <key>CFBundleDisplayName</key>
+    <string>TuneLab</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.tunelab.app</string>
+    <key>CFBundleVersion</key>
+    <string>1.5.10</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleExecutable</key>
+    <string>TuneLab</string>
+    <key>CFBundleIconFile</key>
+    <string>app.icns</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>tlp</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>file.icns</string>
+            <key>CFBundleTypeName</key>
+            <string>TuneLab Project</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.tunelab.project</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.tunelab.project</string>
+            <key>UTTypeDescription</key>
+            <string>TuneLab Project</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>tlp</string>
+                </array>
+            </dict>
+            <key>UTTypeIconFile</key>
+            <string>file.icns</string>
+        </dict>
+    </array>
+</dict>
+</plist>
