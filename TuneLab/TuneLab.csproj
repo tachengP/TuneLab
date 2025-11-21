@@ -11,6 +11,8 @@
 		<Version>1.5.10</Version>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<ApplicationIcon>Assets\app.ico</ApplicationIcon>
+		<!-- Define IsWindowsPlatform property for simpler conditions -->
+		<IsWindowsPlatform Condition="$(RuntimeIdentifier.StartsWith('win'))">true</IsWindowsPlatform>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -22,7 +24,7 @@
 	</ItemGroup>
 
 	<!-- Copy file.ico to root directory for Windows platform -->
-	<ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' OR '$(RuntimeIdentifier)' == 'win-x86' OR '$(RuntimeIdentifier)' == 'win-arm64'">
+	<ItemGroup Condition="'$(IsWindowsPlatform)' == 'true'">
 	  <None Include="Assets\file.ico">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	    <Link>file.ico</Link>
@@ -30,14 +32,10 @@
 	</ItemGroup>
 
 	<!-- Copy Assets folder for non-Windows platforms -->
-	<ItemGroup Condition="'$(RuntimeIdentifier)' != 'win-x64' AND '$(RuntimeIdentifier)' != 'win-x86' AND '$(RuntimeIdentifier)' != 'win-arm64' AND '$(RuntimeIdentifier)' != ''">
+	<ItemGroup Condition="'$(IsWindowsPlatform)' != 'true' AND '$(RuntimeIdentifier)' != ''">
 	  <None Include="Assets\file.ico">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	    <Link>Assets\file.ico</Link>
-	  </None>
-	  <None Include="Assets\app.ico">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	    <Link>Assets\app.ico</Link>
 	  </None>
 	  <None Include="Assets\file.png">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
