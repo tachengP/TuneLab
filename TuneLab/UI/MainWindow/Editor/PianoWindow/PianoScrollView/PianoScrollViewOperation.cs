@@ -1548,7 +1548,7 @@ internal partial class PianoScrollView
             mMinPitch = minPitch;
             mMaxPitch = maxPitch;
 
-            // Capture original pitch and automation data once at the start
+            // Capture and clear original pitch/automation data (like "cut")
             var part = PianoScrollView.Part;
             if (Settings.PitchSyncMode)
             {
@@ -1556,6 +1556,11 @@ internal partial class PianoScrollView
                 {
                     var pitchInfo = part.Pitch.RangeInfo(moveNote.StartPos(), moveNote.EndPos());
                     mOriginalPitchInfos.Add(pitchInfo);
+                }
+                // Clear the original positions
+                foreach (var moveNote in mMoveNotes)
+                {
+                    part.Pitch.Clear(moveNote.StartPos(), moveNote.EndPos());
                 }
             }
             if (Settings.ParaSyncMode)
@@ -1572,6 +1577,20 @@ internal partial class PianoScrollView
                     }
                     mOriginalAutomationInfos[automationID] = automationLines;
                 }
+                // Clear the original positions
+                foreach (var moveNote in mMoveNotes)
+                {
+                    foreach (var kvp in part.Automations)
+                    {
+                        kvp.Value.Clear(moveNote.StartPos(), moveNote.EndPos(), Settings.ParameterBoundaryExtension);
+                    }
+                }
+            }
+            
+            // Store original positions for tracking
+            foreach (var moveNote in mMoveNotes)
+            {
+                mOriginalNotePositions.Add((moveNote.StartPos(), moveNote.EndPos()));
             }
         }
 
@@ -1596,112 +1615,124 @@ internal partial class PianoScrollView
             if (posOffset == mLastPosOffset && pitchOffset == mLastPitchOffset)
                 return;
 
+            // Calculate how much notes are moving from their current position
+            double deltaPos = posOffset - mLastPosOffset;
+            int deltaPitch = pitchOffset - mLastPitchOffset;
+
+            // If position changed and we've moved before, restore the previous overlay position's data
+            if (mMoved && (deltaPos != 0 || deltaPitch != 0))
+            {
+                // Restore previous position's captured data
+                if (Settings.PitchSyncMode && !mPreviousPositionPitchInfos.IsEmpty())
+                {
+                    foreach (var info in mPreviousPositionPitchInfos)
+                    {
+                        foreach (var line in info)
+                        {
+                            part.Pitch.AddLine(line, Settings.ParameterBoundaryExtension);
+                        }
+                    }
+                    mPreviousPositionPitchInfos.Clear();
+                }
+                if (Settings.ParaSyncMode && !mPreviousPositionAutomationInfos.IsEmpty())
+                {
+                    foreach (var kvp in mPreviousPositionAutomationInfos)
+                    {
+                        var automationID = kvp.Key;
+                        if (part.Automations.TryGetValue(automationID, out var automation))
+                        {
+                            foreach (var line in kvp.Value)
+                            {
+                                automation.AddLine(line, Settings.ParameterBoundaryExtension);
+                            }
+                        }
+                    }
+                    mPreviousPositionAutomationInfos.Clear();
+                }
+            }
+
             mLastPosOffset = posOffset;
             mLastPitchOffset = pitchOffset;
             mMoved = true;
-            part.DiscardTo(mHead);
+            
             part.BeginMergeReSegment();
             part.Notes.ListModified.BeginMerge();
 
-            // Transform the originally captured pitch and automation data to new positions
-            List<List<List<Point>>> pitchInfos = new();
-            Dictionary<string, List<List<Point>>> automationInfos = new();
-            
+            // Move notes by delta
+            foreach (var note in mMoveNotes)
+            {
+                note.Pos.Set(note.Pos.Value + deltaPos);
+                note.Pitch.Set(note.Pitch.Value + deltaPitch);
+                part.RemoveNote(note);
+            }
+            foreach (var note in mMoveNotes)
+            {
+                part.InsertNote(note);
+            }
+
+            // Capture current position's data before overlaying (will be restored if we move again)
             if (Settings.PitchSyncMode)
             {
                 int noteIndex = 0;
                 foreach (var note in mMoveNotes)
                 {
-                    var pitchInfo = mOriginalPitchInfos[noteIndex];
-                    var transformedPitchInfo = new List<List<Point>>();
-                    foreach (var line in pitchInfo)
+                    var currentPitchInfo = part.Pitch.RangeInfo(note.StartPos(), note.EndPos());
+                    mPreviousPositionPitchInfos.Add(currentPitchInfo);
+                    
+                    // Clear current position
+                    part.Pitch.Clear(note.StartPos(), note.EndPos());
+                    
+                    // Overlay our captured data at the new position
+                    var originalPitchInfo = mOriginalPitchInfos[noteIndex];
+                    foreach (var line in originalPitchInfo)
                     {
                         var transformedLine = new List<Point>();
                         for (int i = 0; i < line.Count; i++)
                         {
-                            transformedLine.Add(new(line[i].X + note.StartPos() + posOffset, line[i].Y + pitchOffset));
+                            // Transform from original position to current position
+                            transformedLine.Add(new(line[i].X + note.StartPos(), line[i].Y + pitchOffset));
                         }
-                        transformedPitchInfo.Add(transformedLine);
+                        part.Pitch.AddLine(transformedLine, Settings.ParameterBoundaryExtension);
                     }
-                    pitchInfos.Add(transformedPitchInfo);
                     noteIndex++;
                 }
             }
+            
             if (Settings.ParaSyncMode)
             {
-                foreach (var kvp in mOriginalAutomationInfos)
+                foreach (var kvp in part.Automations)
                 {
                     var automationID = kvp.Key;
-                    var originalLines = kvp.Value;
-                    var transformedLines = new List<List<Point>>();
+                    var automation = kvp.Value;
+                    
+                    if (!mOriginalAutomationInfos.ContainsKey(automationID))
+                        continue;
+                    
+                    var capturedLines = new List<List<Point>>();
                     int noteIndex = 0;
                     foreach (var note in mMoveNotes)
                     {
-                        var rangeInfo = originalLines[noteIndex];
+                        // Capture current position's data
+                        var currentInfo = automation.RangeInfo(note.StartPos(), note.EndPos());
+                        capturedLines.Add(currentInfo);
+                        
+                        // Clear current position
+                        automation.Clear(note.StartPos(), note.EndPos(), Settings.ParameterBoundaryExtension);
+                        
+                        // Overlay our captured data at the new position
+                        var originalLine = mOriginalAutomationInfos[automationID][noteIndex];
                         var transformedLine = new List<Point>();
-                        for (int i = 0; i < rangeInfo.Count; i++)
+                        for (int i = 0; i < originalLine.Count; i++)
                         {
-                            transformedLine.Add(new(rangeInfo[i].X + note.StartPos() + posOffset, rangeInfo[i].Y));
+                            transformedLine.Add(new(originalLine[i].X + note.StartPos(), originalLine[i].Y));
                         }
-                        transformedLines.Add(transformedLine);
+                        automation.AddLine(transformedLine, Settings.ParameterBoundaryExtension);
                         noteIndex++;
                     }
-                    automationInfos[automationID] = transformedLines;
+                    mPreviousPositionAutomationInfos[automationID] = capturedLines;
                 }
             }
 
-            foreach (var note in mMoveNotes)
-            {
-                note.Pos.Set(note.Pos.Value + posOffset);
-                note.Pitch.Set(note.Pitch.Value + pitchOffset);
-                part.RemoveNote(note);
-            }
-            if (Settings.PitchSyncMode)
-            {
-                foreach (var note in mMoveNotes)
-                {
-                    part.Pitch.Clear(note.StartPos(), note.EndPos());
-                }
-            }
-            if (Settings.ParaSyncMode)
-            {
-                foreach (var note in mMoveNotes)
-                {
-                    foreach (var kvp in part.Automations)
-                    {
-                        kvp.Value.Clear(note.StartPos(), note.EndPos(), Settings.ParameterBoundaryExtension);
-                    }
-                }
-            }
-
-            foreach (var note in mMoveNotes)
-            {
-                part.InsertNote(note);
-            }
-            if (Settings.PitchSyncMode)
-            {
-                foreach (var info in pitchInfos)
-                {
-                    foreach (var line in info)
-                    {
-                        part.Pitch.AddLine(line, Settings.ParameterBoundaryExtension);
-                    }
-                }
-            }
-            if (Settings.ParaSyncMode)
-            {
-                foreach (var kvp in automationInfos)
-                {
-                    var automationID = kvp.Key;
-                    if (part.Automations.TryGetValue(automationID, out var automation))
-                    {
-                        foreach (var line in kvp.Value)
-                        {
-                            automation.AddLine(line, Settings.ParameterBoundaryExtension);
-                        }
-                    }
-                }
-            }
             part.Notes.ListModified.EndMerge();
             part.EndMergeReSegment();
         }
@@ -1719,6 +1750,7 @@ internal partial class PianoScrollView
             PianoScrollView.Part.EnableAutoPrepare();
             if (mMoved)
             {
+                // Commit the final state - the overlay becomes permanent
                 PianoScrollView.Part.Commit();
             }
             else
@@ -1742,6 +1774,9 @@ internal partial class PianoScrollView
             mMoveNotes.Clear();
             mOriginalPitchInfos.Clear();
             mOriginalAutomationInfos.Clear();
+            mOriginalNotePositions.Clear();
+            mPreviousPositionPitchInfos.Clear();
+            mPreviousPositionAutomationInfos.Clear();
             mLastPosOffset = 0;
             mLastPitchOffset = 0;
         }
@@ -1750,6 +1785,11 @@ internal partial class PianoScrollView
         List<INote> mMoveNotes = new();
         List<List<List<Point>>> mOriginalPitchInfos = new();
         Dictionary<string, List<List<Point>>> mOriginalAutomationInfos = new();
+        List<(double start, double end)> mOriginalNotePositions = new();
+        
+        // Store data from previous overlay position to restore when moving
+        List<List<List<Point>>> mPreviousPositionPitchInfos = new();
+        Dictionary<string, List<List<Point>>> mPreviousPositionAutomationInfos = new();
 
         bool mCtrl;
         bool mIsSelected;
