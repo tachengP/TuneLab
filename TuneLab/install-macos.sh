@@ -46,7 +46,22 @@ ln -s "$APP_DIR/TuneLab" "$MACOS_DIR/TuneLab"
 
 # Register the file association
 echo "Registering file associations..."
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$BUNDLE_DIR"
+
+# Try to find lsregister in common locations
+LSREGISTER=""
+if command -v /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister >/dev/null 2>&1; then
+    LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+elif [ -f "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister" ]; then
+    LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+fi
+
+if [ -n "$LSREGISTER" ] && [ -x "$LSREGISTER" ]; then
+    "$LSREGISTER" -f "$BUNDLE_DIR"
+    echo "File associations registered using lsregister"
+else
+    echo "Warning: lsregister not found. File associations may not be registered."
+    echo "You may need to manually associate .tlp files with TuneLab."
+fi
 
 # Clean up
 rm -rf "$BUNDLE_DIR"

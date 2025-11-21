@@ -53,8 +53,11 @@ if [ -f "$APP_DIR/Assets/file.png" ]; then
     
     # Update icon cache
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-        gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor 2>/dev/null || true
-        echo "Icon cache updated"
+        if gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor 2>&1; then
+            echo "Icon cache updated"
+        else
+            echo "Warning: Failed to update icon cache. Icons may not appear until next login."
+        fi
     fi
     
     echo "MIME type icon installed"
