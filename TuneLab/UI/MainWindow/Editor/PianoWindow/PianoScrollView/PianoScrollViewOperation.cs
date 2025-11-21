@@ -1595,23 +1595,21 @@ internal partial class PianoScrollView
             }
             if (Settings.ParaSyncMode)
             {
-                foreach (var note in mMoveNotes)
+                foreach (var kvp in part.Automations)
                 {
-                    foreach (var kvp in part.Automations)
+                    var automationID = kvp.Key;
+                    var automation = kvp.Value;
+                    var automationLines = new List<List<Point>>();
+                    foreach (var note in mMoveNotes)
                     {
-                        var automationID = kvp.Key;
-                        var automation = kvp.Value;
                         var rangeInfo = automation.RangeInfo(note.StartPos(), note.EndPos());
                         for (int i = 0; i < rangeInfo.Count; i++)
                         {
                             rangeInfo[i] = new(rangeInfo[i].X + note.StartPos() + posOffset, rangeInfo[i].Y);
                         }
-                        if (!automationInfos.ContainsKey(automationID))
-                        {
-                            automationInfos[automationID] = new();
-                        }
-                        automationInfos[automationID].Add(rangeInfo);
+                        automationLines.Add(rangeInfo);
                     }
+                    automationInfos[automationID] = automationLines;
                 }
             }
 
