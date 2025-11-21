@@ -12,6 +12,9 @@ internal static class FileAssociation
     private const string FileTypeId = "TuneLab.Project";
     private const string FileDescriptionEn = "TuneLab Project";
     private const string FileDescriptionCn = "TuneLab 工程文件";
+    
+    // Icon size constants for macOS icon generation
+    private static readonly int[] IconSizes = { 16, 32, 128, 256, 512 };
 
     public static void RegisterFileAssociation()
     {
@@ -143,46 +146,13 @@ Terminal=false
             }
 
             // Update MIME database
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = "update-mime-database",
-                    Arguments = Path.Combine(homeDir, ".local", "share", "mime"),
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                Process.Start(psi)?.WaitForExit(5000);
-            }
-            catch { /* Ignore if command doesn't exist */ }
+            RunShellCommand("update-mime-database", Path.Combine(homeDir, ".local", "share", "mime"));
 
             // Update desktop database
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = "update-desktop-database",
-                    Arguments = desktopDir,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                Process.Start(psi)?.WaitForExit(5000);
-            }
-            catch { /* Ignore if command doesn't exist */ }
+            RunShellCommand("update-desktop-database", desktopDir);
 
             // Update icon cache
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = "gtk-update-icon-cache",
-                    Arguments = $"-f -t {Path.Combine(homeDir, ".local", "share", "icons", "hicolor")}",
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                Process.Start(psi)?.WaitForExit(5000);
-            }
-            catch { /* Ignore if command doesn't exist */ }
+            RunShellCommand("gtk-update-icon-cache", $"-f -t {Path.Combine(homeDir, ".local", "share", "icons", "hicolor")}");
         }
         catch (Exception ex)
         {
@@ -205,18 +175,7 @@ Terminal=false
                 CreateOrUpdateMacOSInfoPlist(infoPlistPath, executablePath);
                 
                 // Try to refresh Launch Services
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-                        Arguments = $"-f \"{appBundlePath}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    Process.Start(psi)?.WaitForExit(5000);
-                }
-                catch { /* lsregister might not be accessible */ }
+                RunShellCommand("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", $"-f \"{appBundlePath}\"");
             }
             
             // Also try to register using duti if available
@@ -236,14 +195,7 @@ Terminal=false
                 if (dutiCheck?.ExitCode == 0)
                 {
                     var bundleId = GetMacOSBundleIdentifier() ?? "com.tunelab.TuneLab";
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "duti",
-                        Arguments = $"-s {bundleId} {FileExtension} all",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    Process.Start(psi)?.WaitForExit(5000);
+                    RunShellCommand("duti", $"-s {bundleId} {FileExtension} all");
                 }
             }
             catch { /* duti not available, skip */ }
@@ -295,8 +247,7 @@ Terminal=false
                     PathManager.MakeSureExist(tempIconSet);
                     
                     // Copy file.png to multiple sizes in iconset
-                    var iconSizes = new[] { 16, 32, 128, 256, 512 };
-                    foreach (var size in iconSizes)
+                    foreach (var size in IconSizes)
                     {
                         var iconFile = Path.Combine(tempIconSet, $"icon_{size}x{size}.png");
                         var iconFile2x = Path.Combine(tempIconSet, $"icon_{size}x{size}@2x.png");
@@ -304,40 +255,14 @@ Terminal=false
                         // Use sips to resize
                         try
                         {
-                            var sips = new ProcessStartInfo
-                            {
-                                FileName = "sips",
-                                Arguments = $"-z {size} {size} \"{fileIconPng}\" --out \"{iconFile}\"",
-                                UseShellExecute = false,
-                                CreateNoWindow = true,
-                                RedirectStandardOutput = true,
-                                RedirectStandardError = true
-                            };
-                            Process.Start(sips)?.WaitForExit(2000);
-                            
-                            var sips2x = new ProcessStartInfo
-                            {
-                                FileName = "sips",
-                                Arguments = $"-z {size * 2} {size * 2} \"{fileIconPng}\" --out \"{iconFile2x}\"",
-                                UseShellExecute = false,
-                                CreateNoWindow = true,
-                                RedirectStandardOutput = true,
-                                RedirectStandardError = true
-                            };
-                            Process.Start(sips2x)?.WaitForExit(2000);
+                            RunShellCommand("sips", $"-z {size} {size} \"{fileIconPng}\" --out \"{iconFile}\"", 2000, true);
+                            RunShellCommand("sips", $"-z {size * 2} {size * 2} \"{fileIconPng}\" --out \"{iconFile2x}\"", 2000, true);
                         }
                         catch { }
                     }
                     
                     // Convert iconset to icns
-                    var iconutil = new ProcessStartInfo
-                    {
-                        FileName = "iconutil",
-                        Arguments = $"-c icns \"{tempIconSet}\" -o \"{targetIconPath}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    Process.Start(iconutil)?.WaitForExit(5000);
+                    RunShellCommand("iconutil", $"-c icns \"{tempIconSet}\" -o \"{targetIconPath}\"");
                     
                     // Clean up temp iconset
                     try { Directory.Delete(tempIconSet, true); } catch { }
@@ -436,6 +361,27 @@ Terminal=false
         }
         catch { }
         return null;
+    }
+
+    /// <summary>
+    /// Helper method to run a shell command and wait for completion
+    /// </summary>
+    private static void RunShellCommand(string fileName, string arguments, int timeoutMs = 5000, bool redirectOutput = false)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = redirectOutput,
+                RedirectStandardError = redirectOutput
+            };
+            Process.Start(psi)?.WaitForExit(timeoutMs);
+        }
+        catch { /* Ignore if command doesn't exist or fails */ }
     }
 
     // Windows API for notifying shell about file association changes
