@@ -21,6 +21,26 @@
 	  <Content Include="Assets\app.ico" />
 	</ItemGroup>
 
+	<!-- Copy icon files to root directory for all platforms -->
+	<ItemGroup Condition="'$(RuntimeIdentifier)' != ''">
+	  <None Include="Assets\file.ico">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    <Link>file.ico</Link>
+	  </None>
+	  <None Include="Assets\app.ico">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    <Link>app.ico</Link>
+	  </None>
+	  <None Include="Assets\file.png">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    <Link>file.png</Link>
+	  </None>
+	  <None Include="Assets\app.png">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    <Link>app.png</Link>
+	  </None>
+	</ItemGroup>
+
 	<ItemGroup>
 		<PackageReference Include="Avalonia" Version="11.2.5" />
 		<PackageReference Include="Avalonia.Svg.Skia" Version="11.2.0.2" />

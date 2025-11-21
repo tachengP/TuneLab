@@ -27,8 +27,8 @@ internal static class FileAssociation
                 return;
             }
 
-            var appIconPath = Path.Combine(PathManager.ExcutableFolder, "Assets", "app.ico");
-            var fileIconPath = Path.Combine(PathManager.ExcutableFolder, "Assets", "file.ico");
+            var appIconPath = Path.Combine(PathManager.ExcutableFolder, "app.ico");
+            var fileIconPath = Path.Combine(PathManager.ExcutableFolder, "file.ico");
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -100,8 +100,8 @@ internal static class FileAssociation
             PathManager.MakeSureExist(desktopDir);
 
             var desktopFilePath = Path.Combine(desktopDir, "tunelab.desktop");
-            var iconPath = Path.Combine(PathManager.ExcutableFolder, "Assets", "app.png");
-            var fileIconPath = Path.Combine(PathManager.ExcutableFolder, "Assets", "file.png");
+            var iconPath = Path.Combine(PathManager.ExcutableFolder, "app.png");
+            var fileIconPath = Path.Combine(PathManager.ExcutableFolder, "file.png");
 
             // Create .desktop file
             var desktopFileContent = $@"[Desktop Entry]
@@ -233,8 +233,8 @@ Terminal=false
             PathManager.MakeSureExist(resourcesDir);
 
             // Copy icons to Resources folder
-            var fileIconPng = Path.Combine(PathManager.ExcutableFolder, "Assets", "file.png");
-            var appIconPng = Path.Combine(PathManager.ExcutableFolder, "Assets", "app.png");
+            var fileIconPng = Path.Combine(PathManager.ExcutableFolder, "file.png");
+            var appIconPng = Path.Combine(PathManager.ExcutableFolder, "app.png");
             
             if (File.Exists(fileIconPng))
             {
