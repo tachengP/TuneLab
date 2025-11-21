@@ -827,7 +827,27 @@ internal partial class PianoScrollView : View, IPianoScrollView
         switch (mDependency.PianoTool.Value)
         {
             case PianoTool.Note:
-                mNoteClipboard = mSelection.IsAcitve ? Part.CopyNotes(mSelection.Start - pos, mSelection.End - pos) : Part.CopyNotes();
+                if (mSelection.IsAcitve)
+                {
+                    mNoteClipboard = Part.CopyNotes(mSelection.Start - pos, mSelection.End - pos);
+                    // Also copy pitch/automation data when sync modes are enabled
+                    if (Settings.PitchSyncMode || Settings.ParaSyncMode)
+                    {
+                        mParameterClipboard = Part.CopyParameters(mSelection.Start - pos, mSelection.End - pos);
+                    }
+                }
+                else
+                {
+                    mNoteClipboard = Part.CopyNotes();
+                    // Copy pitch/automation data for selected notes when sync modes are enabled
+                    if ((Settings.PitchSyncMode || Settings.ParaSyncMode) && !Part.Notes.AllSelectedItems().IsEmpty())
+                    {
+                        var selectedNotes = Part.Notes.AllSelectedItems();
+                        double start = selectedNotes.Min(n => n.StartPos());
+                        double end = selectedNotes.Max(n => n.EndPos());
+                        mParameterClipboard = Part.CopyParameters(start, end);
+                    }
+                }
                 break;
             case PianoTool.Vibrato:
                 mVibratoClipboard = mSelection.IsAcitve ? Part.CopyVibratos(mSelection.Start - pos, mSelection.End - pos) : Part.CopyVibratos();
@@ -867,6 +887,11 @@ internal partial class PianoScrollView : View, IPianoScrollView
         {
             case PianoTool.Note:
                 Part.PasteAt(mNoteClipboard, pos);
+                // Also paste pitch/automation data when sync modes are enabled
+                if ((Settings.PitchSyncMode || Settings.ParaSyncMode) && !mParameterClipboard.IsEmpty)
+                {
+                    Part.PasteAt(mParameterClipboard, pos, Settings.ParameterBoundaryExtension);
+                }
                 Part.Commit();
                 break;
             case PianoTool.Vibrato:

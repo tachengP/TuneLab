@@ -1547,6 +1547,32 @@ internal partial class PianoScrollView
             mPitch = note.Pitch.Value;
             mMinPitch = minPitch;
             mMaxPitch = maxPitch;
+
+            // Capture original pitch and automation data once at the start
+            var part = PianoScrollView.Part;
+            if (Settings.PitchSyncMode)
+            {
+                foreach (var moveNote in mMoveNotes)
+                {
+                    var pitchInfo = part.Pitch.RangeInfo(moveNote.StartPos(), moveNote.EndPos());
+                    mOriginalPitchInfos.Add(pitchInfo);
+                }
+            }
+            if (Settings.ParaSyncMode)
+            {
+                foreach (var kvp in part.Automations)
+                {
+                    var automationID = kvp.Key;
+                    var automation = kvp.Value;
+                    var automationLines = new List<List<Point>>();
+                    foreach (var moveNote in mMoveNotes)
+                    {
+                        var rangeInfo = automation.RangeInfo(moveNote.StartPos(), moveNote.EndPos());
+                        automationLines.Add(rangeInfo);
+                    }
+                    mOriginalAutomationInfos[automationID] = automationLines;
+                }
+            }
         }
 
         public void Move(Avalonia.Point point, bool alt, bool shift)
@@ -1576,40 +1602,51 @@ internal partial class PianoScrollView
             part.DiscardTo(mHead);
             part.BeginMergeReSegment();
             part.Notes.ListModified.BeginMerge();
+
+            // Transform the originally captured pitch and automation data to new positions
             List<List<List<Point>>> pitchInfos = new();
             Dictionary<string, List<List<Point>>> automationInfos = new();
+            
             if (Settings.PitchSyncMode)
             {
+                int noteIndex = 0;
                 foreach (var note in mMoveNotes)
                 {
-                    var pitchInfo = part.Pitch.RangeInfo(note.StartPos(), note.EndPos());
+                    var pitchInfo = mOriginalPitchInfos[noteIndex];
+                    var transformedPitchInfo = new List<List<Point>>();
                     foreach (var line in pitchInfo)
                     {
+                        var transformedLine = new List<Point>();
                         for (int i = 0; i < line.Count; i++)
                         {
-                            line[i] = new(line[i].X + note.StartPos() + posOffset, line[i].Y + pitchOffset);
+                            transformedLine.Add(new(line[i].X + note.StartPos() + posOffset, line[i].Y + pitchOffset));
                         }
+                        transformedPitchInfo.Add(transformedLine);
                     }
-                    pitchInfos.Add(pitchInfo);
+                    pitchInfos.Add(transformedPitchInfo);
+                    noteIndex++;
                 }
             }
             if (Settings.ParaSyncMode)
             {
-                foreach (var kvp in part.Automations)
+                foreach (var kvp in mOriginalAutomationInfos)
                 {
                     var automationID = kvp.Key;
-                    var automation = kvp.Value;
-                    var automationLines = new List<List<Point>>();
+                    var originalLines = kvp.Value;
+                    var transformedLines = new List<List<Point>>();
+                    int noteIndex = 0;
                     foreach (var note in mMoveNotes)
                     {
-                        var rangeInfo = automation.RangeInfo(note.StartPos(), note.EndPos());
+                        var rangeInfo = originalLines[noteIndex];
+                        var transformedLine = new List<Point>();
                         for (int i = 0; i < rangeInfo.Count; i++)
                         {
-                            rangeInfo[i] = new(rangeInfo[i].X + note.StartPos() + posOffset, rangeInfo[i].Y);
+                            transformedLine.Add(new(rangeInfo[i].X + note.StartPos() + posOffset, rangeInfo[i].Y));
                         }
-                        automationLines.Add(rangeInfo);
+                        transformedLines.Add(transformedLine);
+                        noteIndex++;
                     }
-                    automationInfos[automationID] = automationLines;
+                    automationInfos[automationID] = transformedLines;
                 }
             }
 
@@ -1703,12 +1740,16 @@ internal partial class PianoScrollView
             mMoved = false;
             mNote = null;
             mMoveNotes.Clear();
+            mOriginalPitchInfos.Clear();
+            mOriginalAutomationInfos.Clear();
             mLastPosOffset = 0;
             mLastPitchOffset = 0;
         }
 
         INote? mNote;
         List<INote> mMoveNotes = new();
+        List<List<List<Point>>> mOriginalPitchInfos = new();
+        Dictionary<string, List<List<Point>>> mOriginalAutomationInfos = new();
 
         bool mCtrl;
         bool mIsSelected;
